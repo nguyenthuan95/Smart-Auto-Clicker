@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer concentric ring -->
+    <path
+        android:strokeColor="#80FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:pathData="M 54,34 A 20,20 0 1,0 54,74 A 20,20 0 1,0 54,34" />
+    <!-- Inner concentric ring -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:fillColor="#2600E5FF"
+        android:pathData="M 54,43 A 11,11 0 1,0 54,65 A 11,11 0 1,0 54,43" />
+    <!-- Crosshairs -->
+    <path
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="2.5"
+        android:pathData="M 54,26 L 54,36 M 54,72 L 54,82 M 26,54 L 36,54 M 72,54 L 82,54" />
+    <!-- Center Click Dot -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M 54,51 A 3,3 0 1,0 54,57 A 3,3 0 1,0 54,51" />
+    <!-- Modern pointer arrow clicking center -->
+    <path
+        android:fillColor="#FFD600"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M 64,64 L 78,78 L 72,82 L 67,73 L 61,79 Z" />
+</vector>

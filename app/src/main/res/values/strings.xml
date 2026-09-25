@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Smart Auto Clicker</string>
+    <string name="accessibility_service_name">Smart Auto Clicker Service</string>
+    <string name="accessibility_service_desc">Dịch vụ hỗ trợ thực hiện tự động chạm, cử chỉ vuốt và thao tác trên màn hình theo cấu hình của người dùng.</string>
+    <string name="quick_tile_label">Smart Clicker</string>
+    <string name="notification_channel_name">Smart Clicker Dịch vụ</string>
+    <string name="notification_channel_desc">Thông báo trạng thái chạy nền và chụp màn hình</string>
+</resources>
