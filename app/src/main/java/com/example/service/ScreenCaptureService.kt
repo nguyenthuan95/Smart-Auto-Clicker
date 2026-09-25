@@ -186,15 +186,19 @@ class ScreenCaptureService : Service() {
 
     /**
      * Chụp khung hình hiện tại và trả về Bitmap đã xử lý căn chỉnh padding
+     * @param settleMs Thời gian chờ thêm (ms) để UI ổn định trước khi chụp
      */
     @Synchronized
-    fun captureCurrentFrame(): Bitmap? {
+    fun captureCurrentFrame(settleMs: Long = 0L): Bitmap? {
         val reader = imageReader ?: return null
         var image: Image? = null
         try {
+            if (settleMs > 0) {
+                Thread.sleep(settleMs)
+            }
             // Tạm ẩn bong bóng nổi (alpha = 0) để không làm che khuất ảnh chụp
             com.example.engine.ExecutionManager.onTemporarilyHideBubble?.invoke(true)
-            Thread.sleep(40L) // Cho phép 1 frame của UI buffer cập nhật
+            Thread.sleep(60L) // Cho phép 1 frame của UI buffer cập nhật
 
             // Thử lấy khung hình mới nhất từ buffer (tối đa 4 lần nếu buffer đang flip)
             var attempts = 0

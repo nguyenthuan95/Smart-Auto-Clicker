@@ -31,6 +31,19 @@ class SmartAccessibilityService : AccessibilityService() {
         var currentPackageName: String = ""
             private set
 
+        private val IGNORED_PACKAGES = setOf(
+            "com.android.systemui",
+            "android"
+        )
+
+        fun isIgnoredPackage(pkg: String?): Boolean {
+            if (pkg.isNullOrBlank()) return true
+            val p = pkg.trim()
+            if (p in IGNORED_PACKAGES) return true
+            if (p.contains("inputmethod", ignoreCase = true)) return true
+            return false
+        }
+
         private val _isServiceConnected = MutableStateFlow(false)
         val isServiceConnected: StateFlow<Boolean> = _isServiceConnected.asStateFlow()
     }
@@ -47,8 +60,8 @@ class SmartAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString()?.trim()
-            if (!pkg.isNullOrEmpty() && pkg != "com.android.systemui") {
-                currentPackageName = pkg
+            if (!isIgnoredPackage(pkg)) {
+                currentPackageName = pkg!!
             }
         }
     }
@@ -227,18 +240,18 @@ class SmartAccessibilityService : AccessibilityService() {
      *
      * 1. Ưu tiên rootInActiveWindow (đọc đồng bộ, phản ánh trạng thái window hiện tại).
      * 2. Nếu rootInActiveWindow null (đang chuyển cảnh), duyệt danh sách windows tìm window TYPE_APPLICATION.
-     * 3. Fallback về currentPackageName (cập nhật từ event và các lần đọc hợp lệ gần nhất).
+     * 3. Fallback về currentPackageName (được bảo vệ, không bao giờ bị ô nhiễm bởi SystemUI/IME/android).
      */
     fun getForegroundPackage(): String {
-        // 1. Đọc rootInActiveWindow trước — nguồn đồng bộ
+        // 1. Đọc rootInActiveWindow trước — nguồn đồng bộ trực tiếp
         try {
             val rootPkg = rootInActiveWindow?.packageName?.toString()?.trim()
-            if (!rootPkg.isNullOrEmpty() && rootPkg != "com.android.systemui") {
-                currentPackageName = rootPkg
+            if (!isIgnoredPackage(rootPkg)) {
+                currentPackageName = rootPkg!!
                 return rootPkg
             }
         } catch (e: Exception) {
-            // ignore
+            // ignore IPC issues
         }
 
         // 2. Duyệt danh sách interactive windows để tìm cửa sổ TYPE_APPLICATION
@@ -250,15 +263,15 @@ class SmartAccessibilityService : AccessibilityService() {
                 it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
             }
             val winPkg = appWindow?.root?.packageName?.toString()?.trim()
-            if (!winPkg.isNullOrEmpty() && winPkg != "com.android.systemui") {
-                currentPackageName = winPkg
+            if (!isIgnoredPackage(winPkg)) {
+                currentPackageName = winPkg!!
                 return winPkg
             }
         } catch (e: Exception) {
             // ignore
         }
 
-        // 3. Fallback: giá trị gần nhất được ghi nhận
+        // 3. Fallback: giá trị gần nhất hợp lệ đã ghi nhận
         return currentPackageName.trim()
     }
 }

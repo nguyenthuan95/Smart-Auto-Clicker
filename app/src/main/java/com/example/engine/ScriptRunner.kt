@@ -1,5 +1,5 @@
 package com.example.engine
-import com.example.data.model.MatchType
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import com.example.data.model.MatchType
 import com.example.service.ScreenCaptureService
 import com.example.service.SmartAccessibilityService
 import kotlinx.coroutines.delay
@@ -60,9 +61,9 @@ class ScriptRunner(private val context: Context) {
 
             // Khởi tạo các hàm API toàn cục cho JS
             val setupJs = """
-                function ocr(region) { return __api.ocr(region || null); }
-                function scanText(region) { return ocr(region); }
-                function findText(pattern, region) { return __api.findText(pattern, region || null); }
+                function ocr(region, settleMs) { return __api.ocr(region || null, settleMs || 0); }
+                function scanText(region, settleMs) { return ocr(region, settleMs); }
+                function findText(pattern, region, options) { return __api.findText(pattern, region || null, options || null); }
                 function click(x, y, ms) { return __api.click(x, y, ms === undefined ? 80 : ms); }
                 function doubleClick(x, y) { return __api.doubleClick(x, y); }
                 function longPress(x, y, ms) { return __api.longPress(x, y, ms || 600); }
@@ -82,8 +83,8 @@ class ScriptRunner(private val context: Context) {
                 function openUrl(uriString) { return __api.openUrl(uriString); }
                 function goHome(ms) { return __api.goHome(ms || 250); }
                 function back(ms) { return __api.back(ms || 200); }
-                function getForegroundPackage() { return String(__api.getForegroundPackage() || "").trim(); }
-                function tapText(pattern, region, ms) { return __api.tapText(pattern, region || null, ms === undefined ? 80 : ms); }
+                function getForegroundPackage(timeoutMs) { return String(__api.getForegroundPackage(timeoutMs || 0) || "").trim(); }
+                function tapText(pattern, region, optionsOrMs) { return __api.tapText(pattern, region || null, optionsOrMs === undefined ? 80 : optionsOrMs); }
                 function markStep(stepName) { return __api.markStep(stepName); }
                 function waitUntil(conditionFn, timeoutMs, intervalMs) { return __api.waitUntil(conditionFn, timeoutMs || 10000, intervalMs || 1000); }
                 function waitForText(pattern, timeoutMs, region) { return __api.waitForText(pattern, timeoutMs || 10000, region || null); }
@@ -212,7 +213,7 @@ class ScriptRunner(private val context: Context) {
             return colorHex
         }
 
-        fun ocr(regionObj: Any?): NativeArray {
+        fun ocr(regionObj: Any?, settleMsObj: Any? = null): NativeArray {
             checkCancelled()
             val service = ScreenCaptureService.instance
             if (service == null) {
@@ -220,7 +221,8 @@ class ScriptRunner(private val context: Context) {
                 return NativeArray(0)
             }
 
-            val bitmap = service.captureCurrentFrame()
+            val settleMs = (settleMsObj as? Number)?.toLong() ?: 0L
+            val bitmap = service.captureCurrentFrame(settleMs)
             if (bitmap == null) {
                 LogRepository.warn("OCR", "Không lấy được ảnh màn hình.")
                 return NativeArray(0)
@@ -252,11 +254,28 @@ class ScriptRunner(private val context: Context) {
             return NativeArray(list)
         }
 
-        fun findText(pattern: Any?, regionObj: Any?): NativeObject? {
+        fun findText(pattern: Any?, regionObj: Any?, optionsOrSettleMs: Any? = null): NativeObject? {
             checkCancelled()
             if (pattern == null) return null
             val patternStr = pattern.toString()
             if (patternStr.isBlank()) return null
+
+            var exactMatch = false
+            var caseSensitiveOverride: Boolean? = null
+            var settleMs = 0L
+
+            if (optionsOrSettleMs is Number) {
+                settleMs = optionsOrSettleMs.toLong()
+            } else if (optionsOrSettleMs is Boolean) {
+                exactMatch = optionsOrSettleMs
+            } else if (optionsOrSettleMs is Scriptable) {
+                val exactProp = ScriptableObject.getProperty(optionsOrSettleMs, "exact")
+                if (exactProp is Boolean) exactMatch = exactProp
+                val caseProp = ScriptableObject.getProperty(optionsOrSettleMs, "caseSensitive")
+                if (caseProp is Boolean) caseSensitiveOverride = caseProp
+                val settleProp = ScriptableObject.getProperty(optionsOrSettleMs, "settleMs")
+                if (settleProp is Number) settleMs = settleProp.toLong()
+            }
 
             val service = ScreenCaptureService.instance
             if (service == null) {
@@ -264,7 +283,7 @@ class ScriptRunner(private val context: Context) {
                 return null
             }
 
-            val bitmap = service.captureCurrentFrame() ?: return null
+            val bitmap = service.captureCurrentFrame(settleMs) ?: return null
             val rect = parseRegion(regionObj)
 
             val elements = runBlocking {
@@ -275,12 +294,12 @@ class ScriptRunner(private val context: Context) {
                 }
             }
 
-            // Hỗ trợ cả String (chứa một phần, không phân biệt hoa thường) và RegExp
+            // Hỗ trợ cả String (chứa một phần / chính xác) và RegExp (/pattern/flags hoặc NativeRegExp)
             val regexMatch = Regex("^/(.+)/([a-z]*)$").matchEntire(patternStr)
             val matched = if (regexMatch != null || pattern.javaClass.name.contains("RegExp")) {
                 val regexPattern = regexMatch?.groupValues?.get(1) ?: patternStr
                 val flags = regexMatch?.groupValues?.get(2) ?: ""
-                val caseSensitive = !flags.contains("i")
+                val caseSensitive = caseSensitiveOverride ?: !flags.contains("i")
                 OcrEngine.findMatchingElement(
                     elements = elements,
                     patternString = regexPattern,
@@ -288,11 +307,13 @@ class ScriptRunner(private val context: Context) {
                     caseSensitive = caseSensitive
                 )
             } else {
+                val matchType = if (exactMatch) MatchType.EXACT else MatchType.CONTAINS
+                val caseSensitive = caseSensitiveOverride ?: false
                 OcrEngine.findMatchingElement(
                     elements = elements,
                     patternString = patternStr,
-                    matchType = MatchType.CONTAINS,
-                    caseSensitive = false
+                    matchType = matchType,
+                    caseSensitive = caseSensitive
                 )
             } ?: return null
 
@@ -508,14 +529,23 @@ class ScriptRunner(private val context: Context) {
             return res
         }
 
-        fun getForegroundPackage(): String {
+        fun getForegroundPackage(timeoutMsObj: Any? = null): String {
             checkCancelled()
             val service = SmartAccessibilityService.instance
             if (service == null) {
                 LogRepository.warn("App", "AccessibilityService chưa kết nối.")
                 return ""
             }
-            val pkg = service.getForegroundPackage()
+            val timeoutMs = (timeoutMsObj as? Number)?.toLong() ?: 0L
+            var pkg = service.getForegroundPackage()
+            if (timeoutMs > 0 && pkg.isEmpty()) {
+                val start = System.currentTimeMillis()
+                while (pkg.isEmpty() && System.currentTimeMillis() - start < timeoutMs) {
+                    checkCancelled()
+                    sleep(25L)
+                    pkg = service.getForegroundPackage()
+                }
+            }
             LogRepository.info("App", "Ứng dụng đang mở ở Foreground: $pkg")
             return pkg
         }
@@ -551,19 +581,32 @@ class ScriptRunner(private val context: Context) {
             LogRepository.info("StepSummary", sb.toString())
         }
 
-        fun tapText(pattern: Any?, regionObj: Any?): Boolean {
+        fun tapText(pattern: Any?, regionObj: Any?, optionsOrMs: Any? = null): Boolean {
             checkCancelled()
             val textPattern = pattern?.toString() ?: return false
             if (textPattern.isBlank()) return false
 
-            val matched = findText(pattern, regionObj) ?: return false
+            var postClickDelayMs = 80L
+            var findOptions: Any? = null
+
+            if (optionsOrMs is Number) {
+                postClickDelayMs = optionsOrMs.toLong()
+            } else if (optionsOrMs is Boolean) {
+                findOptions = optionsOrMs
+            } else if (optionsOrMs is Scriptable) {
+                findOptions = optionsOrMs
+                val postDelayProp = ScriptableObject.getProperty(optionsOrMs, "postDelayMs")
+                if (postDelayProp is Number) postClickDelayMs = postDelayProp.toLong()
+            }
+
+            val matched = findText(pattern, regionObj, findOptions) ?: return false
             val cx = (matched.get("centerX") as? Number)?.toFloat()
                 ?: (matched.get("x") as? Number)?.toFloat() ?: return false
             val cy = (matched.get("centerY") as? Number)?.toFloat()
                 ?: (matched.get("y") as? Number)?.toFloat() ?: return false
 
             LogRepository.action("OCR", "tapText: Tìm thấy '$textPattern' tại ($cx, $cy), tự động chạm...")
-            return click(cx, cy)
+            return click(cx, cy, postClickDelayMs)
         }
 
         fun waitForText(pattern: Any?, timeoutMsObj: Any?, regionObj: Any?): NativeObject? {
