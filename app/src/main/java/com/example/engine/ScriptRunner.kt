@@ -27,7 +27,7 @@ import kotlin.random.Random
 /**
  * ContextFactory tùy biến quan sát số lệnh thực thi trong Rhino để ngắt vòng lặp while ngay lập tức khi dừng
  */
-class CancellableContextFactory : ContextFactory() {
+class CancellableContextFactory(private val buttonId: Int = 1) : ContextFactory() {
     override fun makeContext(): RhinoContext {
         val cx = super.makeContext()
         cx.instructionObserverThreshold = 50 // Giám sát mỗi 50 lệnh bytecode
@@ -35,19 +35,19 @@ class CancellableContextFactory : ContextFactory() {
     }
 
     override fun observeInstructionCount(cx: RhinoContext, instructionCount: Int) {
-        if (ExecutionManager.executionStatus.value == ExecutionStatus.IDLE) {
+        if (!ExecutionManager.isButtonRunning(buttonId)) {
             throw RuntimeException("Script bị dừng bởi người dùng.")
         }
         super.observeInstructionCount(cx, instructionCount)
     }
 }
 
-class ScriptRunner(private val context: Context) {
+class ScriptRunner(private val context: Context, private val buttonId: Int = 1) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun execute(scriptSource: String) {
-        val factory = CancellableContextFactory()
+        val factory = CancellableContextFactory(buttonId)
         val rhino = factory.enterContext()
         var currentApi: ScriptApi? = null
         try {
@@ -119,23 +119,23 @@ class ScriptRunner(private val context: Context) {
     ) {
 
         private fun checkCancelled() {
-            if (ExecutionManager.executionStatus.value == ExecutionStatus.IDLE) {
+            if (!ExecutionManager.isButtonRunning(buttonId)) {
                 throw RuntimeException("Script bị dừng bởi người dùng.")
             }
-            while (ExecutionManager.executionStatus.value == ExecutionStatus.PAUSED) {
+            while (ExecutionManager.isButtonPaused(buttonId)) {
                 try {
                     Thread.sleep(100L)
                 } catch (e: InterruptedException) {
                     throw RuntimeException("Script bị dừng bởi người dùng.")
                 }
-                if (ExecutionManager.executionStatus.value == ExecutionStatus.IDLE) {
+                if (!ExecutionManager.isButtonRunning(buttonId)) {
                     throw RuntimeException("Script bị dừng bởi người dùng.")
                 }
             }
         }
 
         fun log(msg: Any?) {
-            LogRepository.info("Script", msg?.toString() ?: "null")
+            LogRepository.info("Script", "[Nút $buttonId] ${msg?.toString() ?: "null"}")
         }
 
         fun toast(msg: Any?) {
@@ -146,16 +146,16 @@ class ScriptRunner(private val context: Context) {
         }
 
         fun stop() {
-            ExecutionManager.stop()
+            ExecutionManager.stopButton(buttonId)
             throw RuntimeException("Script gọi lệnh stop().")
         }
 
         fun pause() {
-            ExecutionManager.pause()
+            ExecutionManager.pauseButton(buttonId)
         }
 
         fun resume() {
-            ExecutionManager.resume()
+            ExecutionManager.resumeButton(buttonId)
         }
 
         fun sleep(ms: Any?) {

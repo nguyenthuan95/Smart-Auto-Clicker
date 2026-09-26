@@ -114,6 +114,77 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
+        // ==================== KHỐI LIÊN KẾT 2 NÚT NỔI CHẠY SONG SONG ====================
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Default.Layers, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "Chế độ 2 Nút Nổi Song Song",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Bật cả 2 nút nổi cùng lúc, chạy 2 script độc lập song song",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = floatingActive1 && floatingActive2,
+                        onCheckedChange = { checked ->
+                            hasOverlayPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(context) else true
+                            if (checked) {
+                                if (!hasOverlayPermission) {
+                                    Toast.makeText(context, "Vui lòng cấp quyền Cửa sổ nổi", Toast.LENGTH_SHORT).show()
+                                    openOverlaySettings(context)
+                                } else {
+                                    val intent = Intent(context, FloatingControlService::class.java).apply {
+                                        action = FloatingControlService.ACTION_START_BOTH
+                                    }
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        context.startForegroundService(intent)
+                                    } else {
+                                        context.startService(intent)
+                                    }
+                                    floatingActive1 = true
+                                    floatingActive2 = true
+                                    Toast.makeText(context, "Đã bật 2 nút nổi chạy song song!", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                val intent = Intent(context, FloatingControlService::class.java).apply {
+                                    action = FloatingControlService.ACTION_STOP_BOTH
+                                }
+                                context.startService(intent)
+                                floatingActive1 = false
+                                floatingActive2 = false
+                            }
+                        },
+                        modifier = Modifier.testTag("toggle_both_overlay_switch")
+                    )
+                }
+            }
+        }
+
         // ==================== KHỐI NÚT ĐIỀU KHIỂN NỔI 1 ====================
         Card(
             modifier = Modifier.fillMaxWidth(),

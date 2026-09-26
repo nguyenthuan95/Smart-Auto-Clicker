@@ -31,19 +31,28 @@ enum class ExecutionStatus {
 object ExecutionManager {
 
     private val scope = CoroutineScope(Dispatchers.Default)
-    private var activeJob: Job? = null
+    private var activeJob1: Job? = null
+    private var activeJob2: Job? = null
     private var timerJob: Job? = null
     private var initJob: Job? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
-    private var runningThread: Thread? = null
+    private var runningThread1: Thread? = null
+    @Volatile
+    private var runningThread2: Thread? = null
 
     private const val PREFS_NAME = "smart_clicker_prefs"
     private const val PREF_ACTIVE_SCRIPT_ID = "active_script_id"
     private const val PREF_ACTIVE_SCRIPT2_ID = "active_script2_id"
     private const val PREF_BUTTON1_LABEL = "button1_label"
     private const val PREF_BUTTON2_LABEL = "button2_label"
+
+    private val _statusButton1 = MutableStateFlow(ExecutionStatus.IDLE)
+    val statusButton1: StateFlow<ExecutionStatus> = _statusButton1.asStateFlow()
+
+    private val _statusButton2 = MutableStateFlow(ExecutionStatus.IDLE)
+    val statusButton2: StateFlow<ExecutionStatus> = _statusButton2.asStateFlow()
 
     private val _executionStatus = MutableStateFlow(ExecutionStatus.IDLE)
     val executionStatus: StateFlow<ExecutionStatus> = _executionStatus.asStateFlow()
@@ -229,46 +238,117 @@ object ExecutionManager {
         }
     }
 
-    fun pause() {
-        if (_executionStatus.value == ExecutionStatus.RUNNING) {
-            _executionStatus.value = ExecutionStatus.PAUSED
-            _isPaused.value = true
-            _statusText.value = "Đang tạm dừng"
-            LogRepository.info("Manager", "Đã tạm dừng thực thi.")
+    fun isButtonRunning(buttonId: Int): Boolean {
+        val s = if (buttonId == 2) _statusButton2.value else _statusButton1.value
+        return s != ExecutionStatus.IDLE
+    }
+
+    fun isButtonPaused(buttonId: Int): Boolean {
+        val s = if (buttonId == 2) _statusButton2.value else _statusButton1.value
+        return s == ExecutionStatus.PAUSED
+    }
+
+    fun getStatusForButton(buttonId: Int): StateFlow<ExecutionStatus> {
+        return if (buttonId == 2) statusButton2 else statusButton1
+    }
+
+    private fun updateGlobalStatus() {
+        val s1 = _statusButton1.value
+        val s2 = _statusButton2.value
+        val combined = when {
+            s1 == ExecutionStatus.RUNNING || s2 == ExecutionStatus.RUNNING -> ExecutionStatus.RUNNING
+            s1 == ExecutionStatus.PAUSED || s2 == ExecutionStatus.PAUSED -> ExecutionStatus.PAUSED
+            else -> ExecutionStatus.IDLE
         }
+        _executionStatus.value = combined
+        _isRunning.value = (combined == ExecutionStatus.RUNNING)
+        _isPaused.value = (combined == ExecutionStatus.PAUSED)
+        if (combined == ExecutionStatus.IDLE) {
+            _elapsedSeconds.value = 0L
+            _loopCount.value = 0
+            timerJob?.cancel()
+            timerJob = null
+        }
+    }
+
+    fun pauseButton(buttonId: Int) {
+        if (buttonId == 2) {
+            if (_statusButton2.value == ExecutionStatus.RUNNING) {
+                _statusButton2.value = ExecutionStatus.PAUSED
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 2: Đã tạm dừng.")
+            }
+        } else {
+            if (_statusButton1.value == ExecutionStatus.RUNNING) {
+                _statusButton1.value = ExecutionStatus.PAUSED
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 1: Đã tạm dừng.")
+            }
+        }
+    }
+
+    fun resumeButton(buttonId: Int) {
+        if (buttonId == 2) {
+            if (_statusButton2.value == ExecutionStatus.PAUSED) {
+                _statusButton2.value = ExecutionStatus.RUNNING
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 2: Đang tiếp tục chạy...")
+            }
+        } else {
+            if (_statusButton1.value == ExecutionStatus.PAUSED) {
+                _statusButton1.value = ExecutionStatus.RUNNING
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 1: Đang tiếp tục chạy...")
+            }
+        }
+    }
+
+    fun stopButton(buttonId: Int) {
+        if (buttonId == 2) {
+            if (_statusButton2.value != ExecutionStatus.IDLE) {
+                _statusButton2.value = ExecutionStatus.IDLE
+                runningThread2?.interrupt()
+                runningThread2 = null
+                activeJob2?.cancel()
+                activeJob2 = null
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 2: Đã dừng tác vụ.")
+            }
+        } else {
+            if (_statusButton1.value != ExecutionStatus.IDLE) {
+                _statusButton1.value = ExecutionStatus.IDLE
+                runningThread1?.interrupt()
+                runningThread1 = null
+                activeJob1?.cancel()
+                activeJob1 = null
+                updateGlobalStatus()
+                LogRepository.info("Manager", "Nút 1: Đã dừng tác vụ.")
+            }
+        }
+    }
+
+    fun pause() {
+        pauseButton(1)
+        pauseButton(2)
     }
 
     fun resume() {
-        if (_executionStatus.value == ExecutionStatus.PAUSED) {
-            _executionStatus.value = ExecutionStatus.RUNNING
-            _isPaused.value = false
-            _statusText.value = "Đang tiếp tục chạy..."
-            LogRepository.info("Manager", "Đã tiếp tục thực thi.")
-        }
+        resumeButton(1)
+        resumeButton(2)
     }
 
     fun stop() {
-        if (_executionStatus.value != ExecutionStatus.IDLE) {
-            _executionStatus.value = ExecutionStatus.IDLE
-            _isRunning.value = false
-            _isPaused.value = false
-            _statusText.value = "Đã dừng lại"
-            _elapsedSeconds.value = 0L
-            _loopCount.value = 0
-
-            runningThread?.interrupt()
-            activeJob?.cancel()
-            activeJob = null
-            timerJob?.cancel()
-            timerJob = null
-
-            LogRepository.info("Manager", "Đã dừng ngay lập tức toàn bộ tác vụ (Failsafe).")
-        }
+        stopButton(1)
+        stopButton(2)
+        updateGlobalStatus()
+        _statusText.value = "Đã dừng lại"
+        LogRepository.info("Manager", "Đã dừng ngay lập tức toàn bộ tác vụ (Failsafe).")
     }
 
     fun togglePlayPauseForButton(context: Context, buttonId: Int) {
         triggerHaptic(context)
-        when (_executionStatus.value) {
+        val status = if (buttonId == 2) _statusButton2.value else _statusButton1.value
+        when (status) {
             ExecutionStatus.IDLE -> {
                 val script = if (buttonId == 2) _activeScript2.value else _activeScript.value
                 if (script == null) {
@@ -277,13 +357,13 @@ object ExecutionManager {
                     }
                     return
                 }
-                startScript(context, script)
+                startScriptForButton(context, script, buttonId)
             }
             ExecutionStatus.RUNNING -> {
-                stop()
+                stopButton(buttonId)
             }
             ExecutionStatus.PAUSED -> {
-                resume()
+                resumeButton(buttonId)
             }
         }
     }
@@ -300,58 +380,67 @@ object ExecutionManager {
             }
             return
         }
-        startScript(context, script)
+        startScriptForButton(context, script, 1)
     }
 
     fun startScript(context: Context, script: ScriptEntity) {
-        if (_executionStatus.value != ExecutionStatus.IDLE || _isRunning.value) {
-            LogRepository.warn("Manager", "Script đang chạy, bỏ qua yêu cầu chạy lặp.")
-            return
+        startScriptForButton(context, script, 1)
+    }
+
+    fun startScriptForButton(context: Context, script: ScriptEntity, buttonId: Int) {
+        stopButton(buttonId)
+
+        if (buttonId == 2) {
+            _statusButton2.value = ExecutionStatus.RUNNING
+        } else {
+            _statusButton1.value = ExecutionStatus.RUNNING
+        }
+        updateGlobalStatus()
+        _loopCount.value = 1
+        _statusText.value = "[Nút $buttonId] Đang chạy: ${script.name}"
+
+        LogRepository.startNewSession("[Nút $buttonId] ${script.name}")
+        if (timerJob == null || !timerJob!!.isActive) {
+            startTimer()
         }
 
-        stop()
-        _executionStatus.value = ExecutionStatus.RUNNING
-        _isRunning.value = true
-        _isPaused.value = false
-        _loopCount.value = 1
-        _elapsedSeconds.value = 0L
-        _statusText.value = "Đang chạy: ${script.name}"
-
-        // Khởi tạo Session chạy mới
-        LogRepository.startNewSession(script.name)
-        startTimer()
-
-        activeJob = scope.launch(Dispatchers.Default) {
-            runningThread = Thread.currentThread()
+        val job = scope.launch(Dispatchers.Default) {
+            if (buttonId == 2) {
+                runningThread2 = Thread.currentThread()
+            } else {
+                runningThread1 = Thread.currentThread()
+            }
             var exitMessage: String? = null
             var isError = false
             val startTimeMs = System.currentTimeMillis()
 
             try {
-                val runner = ScriptRunner(context)
+                val runner = ScriptRunner(context, buttonId)
                 runner.execute(script.code)
-                exitMessage = "Script '${script.name}' đã hoàn thành"
+                exitMessage = "[Nút $buttonId] '${script.name}' đã hoàn thành"
             } catch (e: Exception) {
                 val msg = e.message ?: ""
                 if (msg.contains("Script bị dừng bởi người dùng") || msg.contains("stop()")) {
-                    exitMessage = "Script đã dừng bởi người dùng"
+                    exitMessage = "[Nút $buttonId] Script đã dừng"
                 } else {
                     isError = true
                     val errDetail = e.localizedMessage ?: e.message ?: "Lỗi không xác định"
-                    exitMessage = "Lỗi script: $errDetail"
-                    LogRepository.error("Manager", "Lỗi thực thi script '${script.name}': $errDetail")
+                    exitMessage = "[Nút $buttonId] Lỗi script: $errDetail"
+                    LogRepository.error("Manager", "[Nút $buttonId] Lỗi thực thi script '${script.name}': $errDetail")
                 }
             } finally {
-                runningThread = null
+                if (buttonId == 2) {
+                    runningThread2 = null
+                    _statusButton2.value = ExecutionStatus.IDLE
+                } else {
+                    runningThread1 = null
+                    _statusButton1.value = ExecutionStatus.IDLE
+                }
+                updateGlobalStatus()
+
                 val totalRuntimeMs = System.currentTimeMillis() - startTimeMs
                 val summary = "${exitMessage ?: "Script đã kết thúc"}. Tổng thời gian thực thi: ${totalRuntimeMs}ms"
                 LogRepository.endSession(summary)
-
-                _executionStatus.value = ExecutionStatus.IDLE
-                _isRunning.value = false
-                _isPaused.value = false
-                timerJob?.cancel()
-                _statusText.value = exitMessage ?: "Sẵn sàng"
 
                 val notifyText = exitMessage ?: "Script đã xong"
                 mainHandler.post {
@@ -363,10 +452,16 @@ object ExecutionManager {
                 }
             }
         }
+
+        if (buttonId == 2) {
+            activeJob2 = job
+        } else {
+            activeJob1 = job
+        }
     }
 
-    suspend fun checkPauseState() {
-        while (_executionStatus.value == ExecutionStatus.PAUSED) {
+    suspend fun checkPauseState(buttonId: Int = 1) {
+        while (isButtonPaused(buttonId)) {
             delay(200L)
         }
     }

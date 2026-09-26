@@ -57,6 +57,8 @@ class FloatingControlService : Service() {
         const val ACTION_STOP_BUTTON_1 = "ACTION_STOP_BUTTON_1"
         const val ACTION_START_BUTTON_2 = "ACTION_START_BUTTON_2"
         const val ACTION_STOP_BUTTON_2 = "ACTION_STOP_BUTTON_2"
+        const val ACTION_START_BOTH = "ACTION_START_BOTH"
+        const val ACTION_STOP_BOTH = "ACTION_STOP_BOTH"
 
         private const val PREFS_NAME = "floating_bubble_prefs"
         private const val NOTIFICATION_ID = 2002
@@ -137,6 +139,14 @@ class FloatingControlService : Service() {
                 showButton(2)
             }
             ACTION_STOP_BUTTON_2 -> {
+                removeButton(2)
+            }
+            ACTION_START_BOTH -> {
+                showButton(1)
+                showButton(2)
+            }
+            ACTION_STOP_BOTH -> {
+                removeButton(1)
                 removeButton(2)
             }
             ACTION_TOGGLE -> {
@@ -310,7 +320,7 @@ class FloatingControlService : Service() {
             }
 
             val density = service.resources.displayMetrics.density
-            val bubbleSizePx = (54 * density).toInt()
+            val bubbleSizePx = (42 * density).toInt()
 
             val savedX = prefs.getInt("bubble_x_$buttonId", screenWidth - bubbleSizePx - 20)
             val defaultY = (screenHeight * defaultYOffsetRatio).toInt()
@@ -332,17 +342,17 @@ class FloatingControlService : Service() {
 
             val root = FrameLayout(service)
 
-            // Bong bóng tròn chính
+            // Bong bóng tròn chính (gọn gàng 42dp như nút xóa)
             val bubble = FrameLayout(service).apply {
                 layoutParams = FrameLayout.LayoutParams(bubbleSizePx, bubbleSizePx)
                 background = createBubbleBackground(ExecutionStatus.IDLE)
-                elevation = 16f
+                elevation = 14f
             }
 
             // Icon Play / Stop ở giữa
             val iconText = TextView(service).apply {
                 text = "▶"
-                textSize = 20f
+                textSize = 15f
                 setTextColor(if (buttonId == 1) Color.parseColor("#00E676") else Color.parseColor("#00B0FF"))
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(
@@ -353,15 +363,15 @@ class FloatingControlService : Service() {
             bubble.addView(iconText)
             playStopIcon = iconText
 
-            // Huy hiệu Nhãn tên nút nổi (Góc trên bên trái) để phân biệt Nút 1 và Nút 2
+            // Huy hiệu Nhãn tên nút nổi (Góc trên bên trái) nhỏ gọn để phân biệt Nút 1 và Nút 2
             val nameTag = TextView(service).apply {
                 text = labelFlow.value
-                textSize = 9f
+                textSize = 8f
                 setTextColor(Color.WHITE)
-                setPadding(6, 2, 6, 2)
+                setPadding(5, 1, 5, 1)
                 val bg = GradientDrawable().apply {
-                    cornerRadius = 10f
-                    setColor(if (buttonId == 1) Color.parseColor("#DD0288D1") else Color.parseColor("#DD7B1FA2"))
+                    cornerRadius = 8f
+                    setColor(if (buttonId == 1) Color.parseColor("#EE0288D1") else Color.parseColor("#EE7B1FA2"))
                     setStroke(1, Color.parseColor("#88FFFFFF"))
                 }
                 background = bg
@@ -370,42 +380,13 @@ class FloatingControlService : Service() {
                     FrameLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
-                    topMargin = 2
-                    leftMargin = 2
+                    topMargin = 1
+                    leftMargin = 1
                 }
                 layoutParams = lp
             }
             bubble.addView(nameTag)
             nameBadge = nameTag
-
-            // Huy hiệu đếm số vòng/thời gian ở góc trên bên phải
-            val badge = TextView(service).apply {
-                text = "0"
-                textSize = 9f
-                setTextColor(Color.WHITE)
-                setPadding(6, 2, 6, 2)
-                val badgeBg = GradientDrawable().apply {
-                    cornerRadius = 10f
-                    setColor(Color.parseColor("#E6000000"))
-                    setStroke(1, Color.parseColor("#55FFFFFF"))
-                }
-                background = badgeBg
-                val lp = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.TOP or Gravity.END
-                    topMargin = 2
-                    rightMargin = 2
-                }
-                layoutParams = lp
-                setOnClickListener {
-                    showTimeInsteadOfLoop = !showTimeInsteadOfLoop
-                    updateBadgeDisplay(ExecutionManager.loopCount.value, ExecutionManager.elapsedSeconds.value)
-                }
-            }
-            bubble.addView(badge)
-            statusBadge = badge
 
             // Thanh mở rộng
             val toolbar = LinearLayout(service).apply {
@@ -421,13 +402,14 @@ class FloatingControlService : Service() {
                 elevation = 18f
             }
 
-            // 1. Nút Tạm dừng
+            // 1. Nút Tạm dừng cho nút này
             val btnPause = createToolbarButton("⏸", "#FFD600") {
                 ExecutionManager.triggerHaptic(service)
-                if (ExecutionManager.executionStatus.value == ExecutionStatus.PAUSED) {
-                    ExecutionManager.resume()
-                } else if (ExecutionManager.executionStatus.value == ExecutionStatus.RUNNING) {
-                    ExecutionManager.pause()
+                val status = if (buttonId == 2) ExecutionManager.statusButton2.value else ExecutionManager.statusButton1.value
+                if (status == ExecutionStatus.PAUSED) {
+                    ExecutionManager.resumeButton(buttonId)
+                } else if (status == ExecutionStatus.RUNNING) {
+                    ExecutionManager.pauseButton(buttonId)
                 }
             }
             pauseIcon = btnPause
@@ -521,7 +503,7 @@ class FloatingControlService : Service() {
                     ExecutionStatus.RUNNING -> Color.parseColor("#FF1744")
                     ExecutionStatus.PAUSED -> Color.parseColor("#FFD600")
                 }
-                setStroke(5, strokeColor)
+                setStroke(3, strokeColor)
             }
         }
 
@@ -632,8 +614,9 @@ class FloatingControlService : Service() {
         private fun startSync() {
             syncJob?.cancel()
             syncJob = scope.launch {
+                val statusFlow = ExecutionManager.getStatusForButton(buttonId)
                 launch {
-                    ExecutionManager.executionStatus.collectLatest { status ->
+                    statusFlow.collectLatest { status ->
                         bubbleView?.background = createBubbleBackground(status)
                         when (status) {
                             ExecutionStatus.IDLE -> {
@@ -656,18 +639,6 @@ class FloatingControlService : Service() {
                 }
 
                 launch {
-                    ExecutionManager.loopCount.collectLatest { loops ->
-                        updateBadgeDisplay(loops, ExecutionManager.elapsedSeconds.value)
-                    }
-                }
-
-                launch {
-                    ExecutionManager.elapsedSeconds.collectLatest { seconds ->
-                        updateBadgeDisplay(ExecutionManager.loopCount.value, seconds)
-                    }
-                }
-
-                launch {
                     scriptFlow.collectLatest { script ->
                         val name = script?.name ?: "Chưa chọn script"
                         activeScriptLabel?.text = "📜 $name"
@@ -679,16 +650,6 @@ class FloatingControlService : Service() {
                         nameBadge?.text = lbl
                     }
                 }
-            }
-        }
-
-        private fun updateBadgeDisplay(loops: Int, seconds: Long) {
-            if (showTimeInsteadOfLoop) {
-                val min = seconds / 60
-                val sec = seconds % 60
-                statusBadge?.text = String.format("%02d:%02d", min, sec)
-            } else {
-                statusBadge?.text = if (loops <= 0) "0" else "x$loops"
             }
         }
     }
