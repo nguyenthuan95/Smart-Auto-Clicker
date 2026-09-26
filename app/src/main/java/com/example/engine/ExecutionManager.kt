@@ -100,6 +100,19 @@ object ExecutionManager {
     fun init(context: Context, repository: AppRepository) {
         initJob?.cancel()
         initJob = scope.launch {
+            // Đảm bảo các script mẫu mới luôn được nạp vào cơ sở dữ liệu nếu chưa có
+            try {
+                val existing = repository.getAllScriptsList()
+                val existingNames = existing.map { it.name }.toSet()
+                for (preset in SampleScripts.allPresets) {
+                    if (!existingNames.contains(preset.name)) {
+                        repository.saveScript(preset)
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val savedScriptId1 = prefs.getLong(PREF_ACTIVE_SCRIPT_ID, -1L)
             val savedScriptId2 = prefs.getLong(PREF_ACTIVE_SCRIPT2_ID, -1L)
