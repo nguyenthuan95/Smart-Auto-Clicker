@@ -37,7 +37,6 @@ fun ScriptEditorScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val scripts by repository.allScripts.collectAsStateWithLifecycle(initialValue = emptyList())
-    val isRunning by ExecutionManager.isRunning.collectAsStateWithLifecycle()
 
     var selectedScriptId by remember { mutableStateOf<Long?>(null) }
     var scriptName by remember { mutableStateOf("") }
@@ -199,33 +198,7 @@ log("Hoàn thành.");
             }
         }
 
-        // Thanh phím tắt API nhanh (Quick Snippets)
-        val snippetScrollState = rememberScrollState()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(snippetScrollState),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            QuickSnippetChip("click(x, y)") { scriptCode += "\nclick(500, 1000);" }
-            QuickSnippetChip("doubleClick(x, y)") { scriptCode += "\ndoubleClick(500, 1000);" }
-            QuickSnippetChip("longPress(x, y, ms)") { scriptCode += "\nlongPress(500, 1000, 800);" }
-            QuickSnippetChip("swipe(...)") { scriptCode += "\nswipe(500, 1500, 500, 500, 400);" }
-            QuickSnippetChip("findText('chữ')") { scriptCode += "\nvar btn = findText(\"Skip\");\nif (btn) click(btn.centerX, btn.centerY);" }
-            QuickSnippetChip("ocr()") { scriptCode += "\nvar results = ocr();\nlog(\"Tìm thấy \" + results.length + \" dòng chữ\");" }
-            QuickSnippetChip("pasteClipboard()") { scriptCode += "\npasteClipboard(500, 1000);" }
-            QuickSnippetChip("sleep(ms)") { scriptCode += "\nsleep(1000);" }
-            QuickSnippetChip("log(msg)") { scriptCode += "\nlog(\"Thông tin: \" + new Date());" }
-            QuickSnippetChip("toast(msg)") { scriptCode += "\ntoast(\"Đã hoàn thành!\");" }
-            QuickSnippetChip("getForegroundPackage()") { scriptCode += "\nvar pkg = getForegroundPackage();\nlog(\"App đang mở: \" + pkg);" }
-            QuickSnippetChip("tapText('chữ')") { scriptCode += "\ntapText(\"Bỏ qua\");" }
-            QuickSnippetChip("openApp('pkg')") { scriptCode += "\nopenApp(\"com.facebook.katana\");" }
-            QuickSnippetChip("goHome()") { scriptCode += "\ngoHome();" }
-            QuickSnippetChip("back()") { scriptCode += "\nback();" }
-            QuickSnippetChip("stop()") { scriptCode += "\nstop();" }
-        }
-
-        // Khung soạn thảo mã nguồn (Code Editor)
+        // Khung soạn thảo mã nguồn (Code Editor) - Chiếm trọn không gian, hiển thị rộng rãi
         Surface(
             modifier = Modifier
                 .weight(1f)
@@ -251,94 +224,5 @@ log("Hoàn thành.");
                     .testTag("code_editor_field")
             )
         }
-
-        val activeScript by ExecutionManager.activeScript.collectAsStateWithLifecycle()
-        val isCurrentActive = selectedScriptId != null && activeScript?.id == selectedScriptId
-
-        // Thanh công cụ thực thi dưới cùng
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Nút gán làm Script hoạt động cho nút nổi
-            OutlinedButton(
-                onClick = {
-                    val currentEntity = ScriptEntity(
-                        id = selectedScriptId ?: 0L,
-                        name = scriptName.ifEmpty { "Script không tên" },
-                        description = scriptDesc,
-                        code = scriptCode
-                    )
-                    ExecutionManager.setActiveScript(currentEntity, context)
-                    Toast.makeText(context, "Đã đặt '${currentEntity.name}' làm script của nút nổi!", Toast.LENGTH_SHORT).show()
-                },
-                colors = if (isCurrentActive) {
-                    ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                        contentColor = MaterialTheme.colorScheme.primary
-                    )
-                } else ButtonDefaults.outlinedButtonColors()
-            ) {
-                Icon(
-                    if (isCurrentActive) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = null,
-                    tint = if (isCurrentActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(if (isCurrentActive) "Đang Liên Kết Nút Nổi" else "Chọn Cho Nút Nổi")
-            }
-
-            if (isRunning) {
-                Button(
-                    onClick = { ExecutionManager.stop() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("stop_script_button")
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Dừng Chạy")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        val currentEntity = ScriptEntity(
-                            id = selectedScriptId ?: 0L,
-                            name = scriptName.ifEmpty { "Script chạy thử" },
-                            description = scriptDesc,
-                            code = scriptCode
-                        )
-                        ExecutionManager.startScript(context, currentEntity)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("run_script_button")
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Chạy Thử")
-                }
-            }
-        }
     }
-}
-
-@Composable
-fun QuickSnippetChip(
-    text: String,
-    onClick: () -> Unit
-) {
-    SuggestionChip(
-        onClick = onClick,
-        label = {
-            Text(
-                text = text,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp
-            )
-        },
-        shape = RoundedCornerShape(8.dp)
-    )
 }

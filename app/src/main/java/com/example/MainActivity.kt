@@ -76,12 +76,6 @@ fun MainAppScreen(repository: com.example.data.database.AppRepository) {
                     ) {
                         Icon(Icons.Default.Sync, contentDescription = "Sao lưu & Khôi phục")
                     }
-                    IconButton(
-                        onClick = { showHelpGuide = true },
-                        modifier = Modifier.testTag("top_help_button")
-                    ) {
-                        Icon(Icons.Default.HelpOutline, contentDescription = "Hướng dẫn")
-                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface

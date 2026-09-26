@@ -234,49 +234,39 @@ var H = size.height;
 // BƯỚC 1 (Ảnh 1): Bấm vào dòng chữ "Người nhận không muốn kiểm hàng?"
 log("👉 Bước 1: Bấm 'Người nhận không muốn kiểm hàng?'");
 click(540, 2596);
-sleep(650);
 
 // BƯỚC 2 (Ảnh 2): Chạm copy mã đơn hàng & Bấm nút "Đã giao hàng"
 log("👉 Bước 2.1: Chạm icon Copy mã đơn hàng");
 click(540, 360);
-sleep(400);
 
 log("👉 Bước 2.2: Bấm nút 'Đã giao hàng'");
 click(778, 2579);
-sleep(850);
 
 // BƯỚC 3 (Ảnh 3.1): Bấm vào icon cây bút (Nhập tay) ở góc trên camera quét
 log("👉 Bước 3: Bấm icon Nhập tay (cây bút)");
 click(1014, 200);
-sleep(800);
 
 // BƯỚC 4 (Ảnh 3): Dán mã vận đơn từ gợi ý clipboard trên bàn phím
 log("👉 Bước 4: Dán mã vận đơn từ clipboard bàn phím");
 click(W * 0.5, H * 0.69, 0);
-sleep(600);
 
 // BƯỚC 5 (Ảnh 4): Bấm nút "XÁC NHẬN" trên ô nhập tay
 log("👉 Bước 5: Bấm nút 'XÁC NHẬN'");
 click(860, 1702);
-sleep(850);
 
 // BƯỚC 6 (Ảnh 5): Chọn phương thức "Tiền mặt" & Bấm "Tiếp theo"
 log("👉 Bước 6.1: Chọn 'Tiền mặt'");
 click(312, 908);
-sleep(450);
 
 log("👉 Bước 6.2: Bấm nút 'Tiếp theo'");
 click(540, 2580);
-sleep(800);
 
 // BƯỚC 7 (Ảnh 6): Chọn kiểu người nhận "Người nhận" & Bấm "Tiếp theo"
 log("👉 Bước 7.1: Chọn kiểu 'Người nhận'");
 click(183, 460);
-sleep(450);
 
 log("👉 Bước 7.2: Bấm nút 'Tiếp theo'");
 click(540, 2580);
-sleep(850);
 
 // BƯỚC 8 (Ảnh 7): Màn hình Biên bản giao hàng, bấm vào ô Máy ảnh
 log("👉 Bước 8: Bấm mở camera chụp hình bằng chứng");

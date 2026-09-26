@@ -100,13 +100,16 @@ object ExecutionManager {
     fun init(context: Context, repository: AppRepository) {
         initJob?.cancel()
         initJob = scope.launch {
-            // Đảm bảo các script mẫu mới luôn được nạp vào cơ sở dữ liệu nếu chưa có
+            // Đảm bảo các script mẫu mới luôn được nạp vào cơ sở dữ liệu nếu chưa có hoặc cập nhật nếu có thay đổi
             try {
                 val existing = repository.getAllScriptsList()
-                val existingNames = existing.map { it.name }.toSet()
+                val existingMap = existing.associateBy { it.name }
                 for (preset in SampleScripts.allPresets) {
-                    if (!existingNames.contains(preset.name)) {
+                    val current = existingMap[preset.name]
+                    if (current == null) {
                         repository.saveScript(preset)
+                    } else if (current.isPreset && current.code != preset.code) {
+                        repository.saveScript(current.copy(code = preset.code, description = preset.description))
                     }
                 }
             } catch (e: Exception) {

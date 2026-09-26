@@ -141,27 +141,6 @@ fun LogsScreen() {
             }
         }
 
-        // Lọc theo cấp độ log
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            FilterChip(
-                selected = selectedLevel == null,
-                onClick = { selectedLevel = null },
-                label = { Text("Tất cả loại (${logs.size})") }
-            )
-            LogLevel.values().forEach { level ->
-                FilterChip(
-                    selected = selectedLevel == level,
-                    onClick = { selectedLevel = if (selectedLevel == level) null else level },
-                    label = { Text(level.name) }
-                )
-            }
-        }
-
         // Danh sách logs
         if (filteredLogs.isEmpty()) {
             Box(

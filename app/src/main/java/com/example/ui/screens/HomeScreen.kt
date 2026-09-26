@@ -274,11 +274,6 @@ fun HomeScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = if (activeScript1 != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                         )
-                        Text(
-                            text = activeScript1?.description?.ifEmpty { "Không có mô tả" } ?: "Chạm 'Đổi' để gán kịch bản cho Nút 1",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     OutlinedButton(
@@ -381,11 +376,6 @@ fun HomeScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = if (activeScript2 != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            text = activeScript2?.description?.ifEmpty { "Không có mô tả" } ?: "Chạm 'Đổi' để gán kịch bản cho Nút 2",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
