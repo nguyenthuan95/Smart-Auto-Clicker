@@ -47,6 +47,7 @@ object LogRepository {
             info("Session", msg)
         }
         scriptStartTimeMs = 0L
+        _currentSession.value = null
     }
 
     fun log(level: LogLevel, tag: String = "Clicker", message: String) {

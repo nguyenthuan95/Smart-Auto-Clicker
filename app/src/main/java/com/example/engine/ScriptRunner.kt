@@ -42,7 +42,7 @@ class CancellableContextFactory(private val buttonId: Int = 1) : ContextFactory(
     }
 }
 
-class ScriptRunner(private val context: Context, private val buttonId: Int = 1) {
+class ScriptRunner(private val context: Context, private val buttonId: Int = 1, private val runId: Long = 0L) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -50,6 +50,7 @@ class ScriptRunner(private val context: Context, private val buttonId: Int = 1) 
         val factory = CancellableContextFactory(buttonId)
         val rhino = factory.enterContext()
         var currentApi: ScriptApi? = null
+        val startExecTime = System.currentTimeMillis()
         try {
             rhino.optimizationLevel = -1 // Thông dịch trực tiếp trên Android VM
             val scope: Scriptable = rhino.initStandardObjects()
@@ -92,11 +93,20 @@ class ScriptRunner(private val context: Context, private val buttonId: Int = 1) 
 
             rhino.evaluateString(scope, setupJs, "init_api.js", 1, null)
 
+            LogRepository.info("Script", ">>> [Nút $buttonId][Run #$runId] Bắt đầu thông dịch mã nguồn JS (${scriptSource.length} ký tự)")
             // Chạy code người dùng
             rhino.evaluateString(scope, scriptSource, "user_script.js", 1, null)
+            val duration = System.currentTimeMillis() - startExecTime
+            LogRepository.info("Script", ">>> [Nút $buttonId][Run #$runId] Đã hoàn thành thông dịch JS (thời lượng: ${duration}ms)")
 
         } catch (e: Exception) {
-            LogRepository.error("Script", "Lỗi thực thi Script: ${e.message}")
+            val duration = System.currentTimeMillis() - startExecTime
+            val msg = e.message ?: ""
+            if (msg.contains("Script bị dừng bởi người dùng") || msg.contains("stop()")) {
+                LogRepository.info("Script", ">>> [Nút $buttonId][Run #$runId] Script dừng qua lệnh stop() (${duration}ms)")
+            } else {
+                LogRepository.error("Script", ">>> [Nút $buttonId][Run #$runId] Kết thúc do Exception (${duration}ms): $msg")
+            }
             throw e
         } finally {
             try {
@@ -146,7 +156,8 @@ class ScriptRunner(private val context: Context, private val buttonId: Int = 1) 
         }
 
         fun stop() {
-            ExecutionManager.stopButton(buttonId)
+            LogRepository.info("Script", ">>> [Nút $buttonId][Run #$runId] Script chủ động gọi stop()!")
+            ExecutionManager.stopButton(buttonId, "Script stop()")
             throw RuntimeException("Script gọi lệnh stop().")
         }
 

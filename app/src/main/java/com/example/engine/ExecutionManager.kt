@@ -42,6 +42,14 @@ object ExecutionManager {
     @Volatile
     private var runningThread2: Thread? = null
 
+    private val button1Lock = Any()
+    private val button2Lock = Any()
+    @Volatile
+    private var isStartingButton1 = false
+    @Volatile
+    private var isStartingButton2 = false
+    private val runCounter = java.util.concurrent.atomic.AtomicLong(0)
+
     private const val PREFS_NAME = "smart_clicker_prefs"
     private const val PREF_ACTIVE_SCRIPT_ID = "active_script_id"
     private const val PREF_ACTIVE_SCRIPT2_ID = "active_script2_id"
@@ -91,6 +99,10 @@ object ExecutionManager {
     // Tọa độ bounding box của các bong bóng nổi trên màn hình để loại trừ OCR và auto-click
     @Volatile
     var floatingBubbleRect: Rect? = null
+    @Volatile
+    var floatingBubbleRect1: Rect? = null
+    @Volatile
+    var floatingBubbleRect2: Rect? = null
 
     // Callback ẩn tạm thời bong bóng khi chụp màn hình OCR
     var onTemporarilyHideBubble: ((hide: Boolean) -> Unit)? = null
@@ -207,9 +219,19 @@ object ExecutionManager {
     }
 
     fun isPointInsideFloatingBubble(x: Float, y: Float): Boolean {
-        val rect = floatingBubbleRect ?: return false
-        return x >= (rect.left - 10) && x <= (rect.right + 10) &&
-               y >= (rect.top - 10) && y <= (rect.bottom + 10)
+        val r1 = floatingBubbleRect1 ?: floatingBubbleRect
+        if (r1 != null && x >= (r1.left - 15) && x <= (r1.right + 15) &&
+            y >= (r1.top - 15) && y <= (r1.bottom + 15)
+        ) {
+            return true
+        }
+        val r2 = floatingBubbleRect2
+        if (r2 != null && x >= (r2.left - 15) && x <= (r2.right + 15) &&
+            y >= (r2.top - 15) && y <= (r2.bottom + 15)
+        ) {
+            return true
+        }
+        return false
     }
 
     fun setLoop(count: Int) {
@@ -319,26 +341,31 @@ object ExecutionManager {
         }
     }
 
-    fun stopButton(buttonId: Int) {
-        if (buttonId == 2) {
-            if (_statusButton2.value != ExecutionStatus.IDLE) {
-                _statusButton2.value = ExecutionStatus.IDLE
-                runningThread2?.interrupt()
-                runningThread2 = null
-                activeJob2?.cancel()
-                activeJob2 = null
-                updateGlobalStatus()
-                LogRepository.info("Manager", "Nút 2: Đã dừng tác vụ.")
-            }
-        } else {
-            if (_statusButton1.value != ExecutionStatus.IDLE) {
-                _statusButton1.value = ExecutionStatus.IDLE
-                runningThread1?.interrupt()
-                runningThread1 = null
-                activeJob1?.cancel()
-                activeJob1 = null
-                updateGlobalStatus()
-                LogRepository.info("Manager", "Nút 1: Đã dừng tác vụ.")
+    fun stopButton(buttonId: Int, source: String = "Manual") {
+        val lock = if (buttonId == 2) button2Lock else button1Lock
+        synchronized(lock) {
+            if (buttonId == 2) {
+                if (_statusButton2.value != ExecutionStatus.IDLE) {
+                    _statusButton2.value = ExecutionStatus.IDLE
+                    runningThread2?.interrupt()
+                    runningThread2 = null
+                    activeJob2?.cancel()
+                    activeJob2 = null
+                    isStartingButton2 = false
+                    updateGlobalStatus()
+                    LogRepository.info("Manager", "[Nút 2] Đã dừng tác vụ (Nguồn: $source).")
+                }
+            } else {
+                if (_statusButton1.value != ExecutionStatus.IDLE) {
+                    _statusButton1.value = ExecutionStatus.IDLE
+                    runningThread1?.interrupt()
+                    runningThread1 = null
+                    activeJob1?.cancel()
+                    activeJob1 = null
+                    isStartingButton1 = false
+                    updateGlobalStatus()
+                    LogRepository.info("Manager", "[Nút 1] Đã dừng tác vụ (Nguồn: $source).")
+                }
             }
         }
     }
@@ -354,38 +381,47 @@ object ExecutionManager {
     }
 
     fun stop() {
-        stopButton(1)
-        stopButton(2)
+        stopButton(1, "Failsafe Stop All")
+        stopButton(2, "Failsafe Stop All")
         updateGlobalStatus()
         _statusText.value = "Đã dừng lại"
         LogRepository.info("Manager", "Đã dừng ngay lập tức toàn bộ tác vụ (Failsafe).")
     }
 
-    fun togglePlayPauseForButton(context: Context, buttonId: Int) {
+    fun togglePlayPauseForButton(context: Context, buttonId: Int, triggerSource: String = "Touch") {
         triggerHaptic(context)
-        val status = if (buttonId == 2) _statusButton2.value else _statusButton1.value
-        when (status) {
-            ExecutionStatus.IDLE -> {
-                val script = if (buttonId == 2) _activeScript2.value else _activeScript.value
-                if (script == null) {
-                    mainHandler.post {
-                        Toast.makeText(context, "Nút $buttonId chưa được gán script nào!", Toast.LENGTH_SHORT).show()
+        val lock = if (buttonId == 2) button2Lock else button1Lock
+        synchronized(lock) {
+            val isStarting = if (buttonId == 2) isStartingButton2 else isStartingButton1
+            if (isStarting) {
+                LogRepository.warn("Manager", "[Nút $buttonId] BỎ QUA togglePlayPause từ [$triggerSource] vì job đang trong quá trình khởi động (State Lock).")
+                return
+            }
+            val status = if (buttonId == 2) _statusButton2.value else _statusButton1.value
+            LogRepository.info("Manager", ">>> [Nút $buttonId] togglePlayPause nhận từ [$triggerSource] lúc ${System.currentTimeMillis()}, Trạng thái hiện tại: $status")
+            when (status) {
+                ExecutionStatus.IDLE -> {
+                    val script = if (buttonId == 2) _activeScript2.value else _activeScript.value
+                    if (script == null) {
+                        mainHandler.post {
+                            Toast.makeText(context, "Nút $buttonId chưa được gán script nào!", Toast.LENGTH_SHORT).show()
+                        }
+                        return
                     }
-                    return
+                    startScriptForButton(context, script, buttonId, triggerSource)
                 }
-                startScriptForButton(context, script, buttonId)
-            }
-            ExecutionStatus.RUNNING -> {
-                stopButton(buttonId)
-            }
-            ExecutionStatus.PAUSED -> {
-                resumeButton(buttonId)
+                ExecutionStatus.RUNNING -> {
+                    stopButton(buttonId, triggerSource)
+                }
+                ExecutionStatus.PAUSED -> {
+                    resumeButton(buttonId)
+                }
             }
         }
     }
 
     fun togglePlayPause(context: Context) {
-        togglePlayPauseForButton(context, 1)
+        togglePlayPauseForButton(context, 1, "Tile/Shortcut")
     }
 
     fun startActiveScript(context: Context) {
@@ -396,83 +432,119 @@ object ExecutionManager {
             }
             return
         }
-        startScriptForButton(context, script, 1)
+        startScriptForButton(context, script, 1, "startActiveScript")
     }
 
     fun startScript(context: Context, script: ScriptEntity) {
-        startScriptForButton(context, script, 1)
+        startScriptForButton(context, script, 1, "startScript")
     }
 
-    fun startScriptForButton(context: Context, script: ScriptEntity, buttonId: Int) {
-        stopButton(buttonId)
+    fun startScriptForButton(context: Context, script: ScriptEntity, buttonId: Int, triggerSource: String = "Manual") {
+        val lock = if (buttonId == 2) button2Lock else button1Lock
+        val runId = runCounter.incrementAndGet()
+        val now = System.currentTimeMillis()
 
-        if (buttonId == 2) {
-            _statusButton2.value = ExecutionStatus.RUNNING
-        } else {
-            _statusButton1.value = ExecutionStatus.RUNNING
-        }
-        updateGlobalStatus()
-        _loopCount.value = 1
-        _statusText.value = "[Nút $buttonId] Đang chạy: ${script.name}"
-
-        LogRepository.startNewSession("[Nút $buttonId] ${script.name}")
-        if (timerJob == null || !timerJob!!.isActive) {
-            startTimer()
-        }
-
-        val job = scope.launch(Dispatchers.Default) {
-            if (buttonId == 2) {
-                runningThread2 = Thread.currentThread()
-            } else {
-                runningThread1 = Thread.currentThread()
+        synchronized(lock) {
+            val isStarting = if (buttonId == 2) isStartingButton2 else isStartingButton1
+            if (isStarting) {
+                LogRepository.warn("Manager", "[Nút $buttonId] BỎ QUA startScriptForButton vì đang có job khởi động (Run #$runId, Nguồn: $triggerSource)")
+                return
             }
-            var exitMessage: String? = null
-            var isError = false
-            val startTimeMs = System.currentTimeMillis()
+            if (buttonId == 2) isStartingButton2 = true else isStartingButton1 = true
 
-            try {
-                val runner = ScriptRunner(context, buttonId)
-                runner.execute(script.code)
-                exitMessage = "[Nút $buttonId] '${script.name}' đã hoàn thành"
-            } catch (e: Exception) {
-                val msg = e.message ?: ""
-                if (msg.contains("Script bị dừng bởi người dùng") || msg.contains("stop()")) {
-                    exitMessage = "[Nút $buttonId] Script đã dừng"
-                } else {
-                    isError = true
-                    val errDetail = e.localizedMessage ?: e.message ?: "Lỗi không xác định"
-                    exitMessage = "[Nút $buttonId] Lỗi script: $errDetail"
-                    LogRepository.error("Manager", "[Nút $buttonId] Lỗi thực thi script '${script.name}': $errDetail")
+            // Đảm bảo thread cũ được ngắt và kết thúc sạch sẽ trước khi bắt đầu job mới
+            val oldThread = if (buttonId == 2) runningThread2 else runningThread1
+            val oldJob = if (buttonId == 2) activeJob2 else activeJob1
+            if (oldThread != null && oldThread.isAlive) {
+                LogRepository.warn("Manager", "[Nút $buttonId] Phát hiện thread cũ (${oldThread.name}) vẫn đang chạy, tiến hành ngắt và chờ dừng...")
+                oldThread.interrupt()
+                try {
+                    oldThread.join(250L)
+                } catch (e: Exception) {
+                    // ignore
                 }
-            } finally {
+            }
+            oldJob?.cancel()
+
+            if (buttonId == 2) {
+                _statusButton2.value = ExecutionStatus.RUNNING
+            } else {
+                _statusButton1.value = ExecutionStatus.RUNNING
+            }
+            updateGlobalStatus()
+            _loopCount.value = 1
+            _statusText.value = "[Nút $buttonId] Đang chạy: ${script.name}"
+
+            LogRepository.info("Manager", ">>> [Nút $buttonId] KHỞI ĐỘNG RUN #$runId lúc $now | Nguồn gọi: [$triggerSource] | Script: '${script.name}' (ID: ${script.id})")
+            LogRepository.startNewSession("[Nút $buttonId] ${script.name} (#$runId)")
+            if (timerJob == null || !timerJob!!.isActive) {
+                startTimer()
+            }
+
+            val job = scope.launch(Dispatchers.Default) {
                 if (buttonId == 2) {
-                    runningThread2 = null
-                    _statusButton2.value = ExecutionStatus.IDLE
+                    runningThread2 = Thread.currentThread()
+                    isStartingButton2 = false
                 } else {
-                    runningThread1 = null
-                    _statusButton1.value = ExecutionStatus.IDLE
+                    runningThread1 = Thread.currentThread()
+                    isStartingButton1 = false
                 }
-                updateGlobalStatus()
+                var exitMessage: String? = null
+                var isError = false
+                val startTimeMs = System.currentTimeMillis()
 
-                val totalRuntimeMs = System.currentTimeMillis() - startTimeMs
-                val summary = "${exitMessage ?: "Script đã kết thúc"}. Tổng thời gian thực thi: ${totalRuntimeMs}ms"
-                LogRepository.endSession(summary)
-
-                val notifyText = exitMessage ?: "Script đã xong"
-                mainHandler.post {
-                    if (isError) {
-                        Toast.makeText(context, notifyText, Toast.LENGTH_LONG).show()
+                try {
+                    LogRepository.info("Manager", ">>> [Nút $buttonId][Run #$runId] Thread '${Thread.currentThread().name}' bắt đầu thông dịch ScriptRunner")
+                    val runner = ScriptRunner(context, buttonId, runId)
+                    runner.execute(script.code)
+                    exitMessage = "[Nút $buttonId] '${script.name}' đã hoàn thành"
+                } catch (e: Exception) {
+                    val msg = e.message ?: ""
+                    if (msg.contains("Script bị dừng bởi người dùng") || msg.contains("stop()")) {
+                        exitMessage = "[Nút $buttonId] Script đã dừng"
                     } else {
-                        Toast.makeText(context, notifyText, Toast.LENGTH_SHORT).show()
+                        isError = true
+                        val errDetail = e.localizedMessage ?: e.message ?: "Lỗi không xác định"
+                        exitMessage = "[Nút $buttonId] Lỗi script: $errDetail"
+                        LogRepository.error("Manager", "[Nút $buttonId][Run #$runId] Lỗi thực thi script '${script.name}': $errDetail")
+                    }
+                } finally {
+                    synchronized(lock) {
+                        if (buttonId == 2) {
+                            runningThread2 = null
+                            isStartingButton2 = false
+                            _statusButton2.value = ExecutionStatus.IDLE
+                            activeJob2 = null
+                        } else {
+                            runningThread1 = null
+                            isStartingButton1 = false
+                            _statusButton1.value = ExecutionStatus.IDLE
+                            activeJob1 = null
+                        }
+                        updateGlobalStatus()
+                    }
+
+                    val totalRuntimeMs = System.currentTimeMillis() - startTimeMs
+                    val summary = "${exitMessage ?: "Script đã kết thúc"}. Tổng thời gian thực thi: ${totalRuntimeMs}ms"
+                    LogRepository.info("Manager", ">>> [Nút $buttonId][Run #$runId] Kết thúc Job sau ${totalRuntimeMs}ms")
+                    LogRepository.endSession(summary)
+
+                    val notifyText = exitMessage ?: "Script đã xong"
+                    mainHandler.post {
+                        if (isError) {
+                            Toast.makeText(context, notifyText, Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, notifyText, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
-        }
 
-        if (buttonId == 2) {
-            activeJob2 = job
-        } else {
-            activeJob1 = job
+            if (buttonId == 2) {
+                activeJob2 = job
+            } else {
+                activeJob1 = job
+            }
         }
     }
 

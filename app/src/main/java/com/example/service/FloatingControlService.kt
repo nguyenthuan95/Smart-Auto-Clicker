@@ -174,7 +174,7 @@ class FloatingControlService : Service() {
                     defaultYOffsetRatio = 0.3f,
                     scriptFlow = ExecutionManager.activeScript,
                     labelFlow = ExecutionManager.button1Label,
-                    onTogglePlayPause = { ExecutionManager.togglePlayPauseForButton(this, 1) }
+                    onTogglePlayPause = { ExecutionManager.togglePlayPauseForButton(this, 1, "FloatingButton1") }
                 ).apply { show() }
             }
             isRunningButton1 = true
@@ -186,7 +186,7 @@ class FloatingControlService : Service() {
                     defaultYOffsetRatio = 0.45f,
                     scriptFlow = ExecutionManager.activeScript2,
                     labelFlow = ExecutionManager.button2Label,
-                    onTogglePlayPause = { ExecutionManager.togglePlayPauseForButton(this, 2) }
+                    onTogglePlayPause = { ExecutionManager.togglePlayPauseForButton(this, 2, "FloatingButton2") }
                 ).apply { show() }
             }
             isRunningButton2 = true
@@ -484,6 +484,11 @@ class FloatingControlService : Service() {
 
         fun remove() {
             syncJob?.cancel()
+            if (buttonId == 2) {
+                ExecutionManager.floatingBubbleRect2 = null
+            } else {
+                ExecutionManager.floatingBubbleRect1 = null
+            }
             rootContainer?.let {
                 try {
                     service.windowManager.removeView(it)
@@ -525,6 +530,7 @@ class FloatingControlService : Service() {
             var initialTouchY = 0f
             var isDragging = false
             var lastDownTime = 0L
+            var lastClickTime = 0L
 
             bubble.setOnTouchListener { _, event ->
                 when (event.action) {
@@ -551,8 +557,15 @@ class FloatingControlService : Service() {
                     }
                     MotionEvent.ACTION_UP -> {
                         val duration = System.currentTimeMillis() - lastDownTime
+                        val now = System.currentTimeMillis()
                         if (!isDragging && duration < 350) {
-                            onTogglePlayPause()
+                            if (now - lastClickTime < 500L) {
+                                com.example.engine.LogRepository.warn("Touch", "[Nút $buttonId] BỎ QUA cú chạm vì cách lần chạm trước ${now - lastClickTime}ms (< 500ms debounce)")
+                            } else {
+                                lastClickTime = now
+                                com.example.engine.LogRepository.info("Touch", ">>> [Nút $buttonId] Nhận chạm hợp lệ (duration=${duration}ms) -> Kích hoạt togglePlayPause")
+                                onTogglePlayPause()
+                            }
                         } else if (!isDragging && duration >= 350) {
                             ExecutionManager.triggerHaptic(service, true)
                             toggleExpandedToolbar(!isExpanded)
@@ -603,12 +616,18 @@ class FloatingControlService : Service() {
             val root = rootContainer ?: return
             val width = root.width.coerceAtLeast(120)
             val height = root.height.coerceAtLeast(120)
-            ExecutionManager.floatingBubbleRect = Rect(
+            val rect = Rect(
                 windowParams.x,
                 windowParams.y,
                 windowParams.x + width,
                 windowParams.y + height
             )
+            if (buttonId == 2) {
+                ExecutionManager.floatingBubbleRect2 = rect
+            } else {
+                ExecutionManager.floatingBubbleRect1 = rect
+            }
+            ExecutionManager.floatingBubbleRect = rect
         }
 
         private fun startSync() {
